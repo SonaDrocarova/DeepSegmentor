@@ -5,21 +5,22 @@ import numpy as np
 import data_io
 from prf_metrics import cal_prf_metrics
 from segment_metrics import cal_semantic_metrics
+import matplotlib.pyplot as plt
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--metric_mode', type=str, default='prf', help='[prf | sem]')
+parser.add_argument('--metric_mode', type=str, default='sem', help='[prf | sem]')
 parser.add_argument('--model_name', type=str, default='deepcrack')
-parser.add_argument('--results_dir', type=str, default='../results')
+parser.add_argument('--results_dir', type=str, default='C:\\Users\\sonic\\OneDrive\\Documents\\Spermie\\split_thr\\thr_compare')
 parser.add_argument('--suffix_gt', type=str, default='label_viz', help='Suffix of ground-truth file name')
 parser.add_argument('--suffix_pred', type=str, default='fused', help='Suffix of predicted file name')
-parser.add_argument('--output', type=str, default='')
+parser.add_argument('--output', type=str, default='../results_dilat/metrics2_thresholding.txt')
 parser.add_argument('--thresh_step', type=float, default=0.01)
 args = parser.parse_args()
 
 if __name__ == '__main__':
     metric_mode = args.metric_mode
-    results_dir = os.path.join(args.results_dir, args.model_name, 'test_latest', 'images')
+    results_dir = args.results_dir
     src_img_list, tgt_img_list = data_io.get_image_pairs(results_dir, args.suffix_gt, args.suffix_pred)
 
     final_results = []

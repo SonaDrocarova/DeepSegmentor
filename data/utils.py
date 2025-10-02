@@ -9,7 +9,7 @@ class MaskToTensor(object):
     def __call__(self, img):
         return torch.from_numpy(img).long()
 
-def get_params(angle_scope=45, scale_scope=0.2, shift_scope=32):
+def get_params(angle_scope=45, scale_scope=0.2, shift_scope=0):
     angle = random.uniform(-angle_scope, angle_scope)
     scale = random.uniform(1-scale_scope, 1+scale_scope)    
     shift_x, shift_y = random.randint(-shift_scope, shift_scope), random.randint(-shift_scope, shift_scope)

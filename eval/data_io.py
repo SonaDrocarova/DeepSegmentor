@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 import codecs
 import glob
+import matplotlib.pyplot as plt
 
 def imread(path, load_size=0, load_mode=cv2.IMREAD_GRAYSCALE, convert_rgb=False, thresh=-1):
     im = cv2.imread(path, load_mode)
@@ -14,6 +15,7 @@ def imread(path, load_size=0, load_mode=cv2.IMREAD_GRAYSCALE, convert_rgb=False,
         im = cv2.resize(im, (load_size, load_size), interpolation=cv2.INTER_CUBIC)
     if thresh > 0:
         _, im = cv2.threshold(im, thresh, 255, cv2.THRESH_BINARY)
+
     return im
 
 def get_image_pairs(data_dir, suffix_gt='real_B', suffix_pred='fake_B'):

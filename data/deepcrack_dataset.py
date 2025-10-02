@@ -48,7 +48,8 @@ class DeepCrackDataset(BaseDataset):
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         lab_path = os.path.join(self.lab_dir, os.path.basename(img_path).split('.')[0]+'.png')
-        lab = cv2.imread(lab_path, cv2.IMREAD_UNCHANGED)
+        lab = cv2.imread(lab_path, cv2.IMREAD_GRAYSCALE)
+   
         if len(lab.shape) == 3:
             lab = cv2.cvtColor(lab, cv2.COLOR_BGR2GRAY)
         
@@ -81,7 +82,7 @@ class DeepCrackDataset(BaseDataset):
 
         # apply the transform to both A and B
         img = self.img_transforms(Image.fromarray(img.copy()))
-        lab = self.lab_transform(lab.copy()).unsqueeze(0)
+        lab = self.lab_transform(lab.copy()).unsqueeze(0).float()
 
         return {'image': img, 'label': lab, 'A_paths': img_path, 'B_paths': lab_path}
 
