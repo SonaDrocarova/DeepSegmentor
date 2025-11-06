@@ -12,7 +12,7 @@ python combine_patches.py ^
   --eval ^
   --name final_deepsperm_split ^
   --load_iter 0 ^
-  --epoch playful-sweep-24^
+  --epoch fallen-sweep-16^
   --gpu_ids 0 ^
   --num_test 999999
 
