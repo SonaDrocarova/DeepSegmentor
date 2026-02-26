@@ -14,5 +14,5 @@ python combine_patches_with_clustering.py ^
   --load_iter 0 ^
   --epoch playful-sweep-24^
   --gpu_ids 0 ^
-  --num_test 999
+  --num_test 9999
 pause

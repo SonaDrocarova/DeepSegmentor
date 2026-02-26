@@ -1,0 +1,96 @@
+python train.py ^
+  --dataroot C:/Users/sonic/OneDrive/Documents/Spermie/split_1class_dilatation ^
+  --name deepcrack ^
+  --model deepcrack ^
+  --dataset_mode deepcrack ^
+  --gpu_ids 0 ^
+  --niter 50 ^
+  --niter_decay 50 ^
+  --batch_size 3 ^
+  --num_classes 1 ^
+  --norm instance ^
+  --lr_decay_iters 40 ^
+  --lr_policy step ^
+  --load_width 256 ^
+  --load_height 256 ^
+  --no_flip 0 ^
+  --display_id 1 ^
+  --loss_mode focal ^
+  --no_html ^
+  --use_augment 
+
+
+
+
+python train_og.py ^
+  --dataroot C:\Users\sonic\OneDrive\Documents\Spermie\split_dataset^
+  --model deepcrack ^
+  --dataset_mode deepcrack ^
+  --batch_size 3 ^
+  --lr 0.0001 ^
+  --loss_mode focal ^
+  --use_augment False^
+  --niter 100 ^
+  --niter_decay 100 ^
+  --name final_deepcrack ^
+  --gpu_ids 0
+
+
+
+	----------testing-----------
+
+python test.py ^
+  --dataroot C:/Users/sonic/OneDrive/Documents/Spermie/split_1class_dilatation ^
+  --phase test ^
+  --name deepcrack ^
+  --model deepcrack ^
+  --netG resnet_9blocks ^
+  --dataset_mode deepcrack ^
+  --gpu_ids -1 ^
+  --epoch latest ^
+  --num_classes 1 ^
+  --load_width 256 ^
+  --load_height 256 ^
+  --norm batch ^
+  --results_dir ./results_dilat
+
+
+
+python test.py ^
+  --dataroot C:\Users\sonic\OneDrive\Documents\Spermie\split_dataset^
+  --model deepcrack ^
+  --dataset_mode deepcrack ^
+  --name final_deepcrack ^
+  --phase test ^
+  --eval ^
+  --load_iter 0 ^
+  --epoch solar-shadow-36_best ^
+  --gpu_ids 0
+
+
+	-----sweep------
+python train.py ^
+  --dataroot C:/Users/sonic/OneDrive/Documents/Spermie/split_1class_dilatation ^
+  --name deepcrack ^
+  --model deepcrack ^
+  --dataset_mode deepcrack ^
+  --gpu_ids 0 ^
+  --num_classes 1 ^
+  --norm instance ^
+  --lr_policy step ^
+  --load_width 256 ^
+  --load_height 256 ^
+  --no_flip 0 ^
+  --display_id 1 ^
+  --no_html ^
+ 
+
+python eval.py ^
+  --metric_mode sem ^
+  --results_dir "C:\Users\sonic\OneDrive\Documents\DeepSegmentor\results\final_deepcrack\test_solar-shadow-36_best\images" ^
+  --suffix_gt label_viz ^
+  --suffix_pred fused ^
+  --output "C:\Users\sonic\OneDrive\Documents\DeepSegmentor\results\final_deepcrack\test_solar-shadow-36_best\metrics.txt"
+
+
+

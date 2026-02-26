@@ -6,7 +6,7 @@ REM --- PATCH-BASED INFERENCE WITH STITCHING ---
 python combine_patches.py ^
   --model deepcrack ^
   --dataset_mode sperm ^
-  --dataroot C:\Users\sonic\OneDrive\Documents\DeepSegmentor_new\datasets\new^
+  --dataroot C:\Users\sonic\OneDrive\Documents\DeepSegmentor_new\datasets\single_img^
   --use_augment False ^
   --phase test ^
   --eval ^
@@ -15,5 +15,6 @@ python combine_patches.py ^
   --epoch fallen-sweep-16^
   --gpu_ids 0 ^
   --num_test 999999
+  --save_profiles
 
 pause

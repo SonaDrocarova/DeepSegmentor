@@ -1,0 +1,1 @@
+python train_sweep.py --model deepcrack --dataset_mode sperm --loss_mode focal --use_augment False --name final_deepsperm_no_dilat --gpu_ids 1 --lr_policy linear --dataroot datasets/split_dataset

@@ -1,0 +1,9 @@
+*.pth
+*.wandb
+*.jpg
+*.png
+wandb/
+*.pyc
+checkpoints/
+
+

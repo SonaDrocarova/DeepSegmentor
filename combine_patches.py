@@ -13,6 +13,9 @@ import argparse
 from skimage.morphology import skeletonize
 
 from split_sperm_parts import split_head_mid_tail, colorize_parts, save_intensity_profile_plot, skeleton_to_polylines
+import json
+import math
+from skimage.measure import label
 
 
 
@@ -98,26 +101,182 @@ def write_cvat_xml_dataset(items, out_xml_path):
     os.makedirs(os.path.dirname(out_xml_path), exist_ok=True)
     ET.ElementTree(ann).write(out_xml_path, encoding='utf-8', xml_declaration=True)
 
+import json, os
+
+def load_global_um_per_px(calib_filename: str = "scale_calibration.json") -> float:
+    """
+    Reads scale_calibration.json from the same directory as this script and
+    returns um_per_px from the FIRST entry.
+
+    Matches JSON like:
+    {
+      "some_image.jpg": { "um_per_px": 0.0862, ... }
+    }
+    """
+    calib_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), calib_filename)
+
+    if not os.path.exists(calib_path):
+        raise FileNotFoundError(f"Missing calibration file: {calib_path}")
+
+    with open(calib_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    if not isinstance(data, dict) or len(data) == 0:
+        raise ValueError(f"Calibration JSON is empty/invalid: {calib_path}")
+
+    first_key = next(iter(data.keys()))
+    entry = data[first_key]
+
+    if not isinstance(entry, dict) or "um_per_px" not in entry:
+        raise ValueError(
+            f"Expected first entry '{first_key}' to contain 'um_per_px'. "
+            f"Got keys: {list(entry.keys()) if isinstance(entry, dict) else type(entry)}"
+        )
+
+    return float(entry["um_per_px"])
+
+def skeleton_length_px(skel_mask: np.ndarray) -> float:
+    """
+    Compute length of a 1-pixel skeleton using 8-neighborhood step weights.
+    Counts each undirected edge once.
+    """
+    skel = skel_mask.astype(bool)
+    ys, xs = np.where(skel)
+    if ys.size == 0:
+        return 0.0
+
+    pts = set(zip(ys.tolist(), xs.tolist()))
+    diag = math.sqrt(2)
+
+    # (dy, dx, weight)
+    nbrs = [
+        (-1, 0, 1.0), (1, 0, 1.0), (0, -1, 1.0), (0, 1, 1.0),
+        (-1, -1, diag), (-1, 1, diag), (1, -1, diag), (1, 1, diag),
+    ]
+
+    length = 0.0
+    for (y, x) in pts:
+        for dy, dx, w in nbrs:
+            ny, nx = y + dy, x + dx
+            if (ny, nx) in pts:
+                # count each edge once
+                if (ny, nx) > (y, x):
+                    length += w
+    return float(length)
+
+
+def annotate_part_lengths_on_overlay(
+    parts_overlay_bgr: np.ndarray,
+    part_mask: np.ndarray,
+    um_per_px: float,
+    font_scale: float = 0.65,
+    thickness: int = 2,
+) -> np.ndarray:
+    """
+    Annotate the parts overlay with per-part lengths (in µm) for each connected object.
+
+    Inputs:
+      - parts_overlay_bgr: image you want to draw text on (BGR)
+      - part_mask: uint8 image with values:
+            0 = background
+            1 = head
+            2 = midpiece
+            3 = tail
+        IMPORTANT: part_mask should be present only on skeleton pixels (as in your pipeline).
+      - um_per_px: conversion (µm per pixel), loaded once from scale_calibration.json :contentReference[oaicite:1]{index=1}
+
+    Behavior:
+      - Finds connected components on (part_mask > 0) => individual sperm objects
+      - For each object, measures each part length along skeleton
+      - Writes "H:xx.xµm", "M:xx.xµm", "T:xx.xµm" near that part in matching color
+    """
+    out = parts_overlay_bgr.copy()
+
+    # Match your color scheme (BGR): head red, mid green, tail blue
+    part_info = {
+        1: ("H", (0, 0, 255)),   # red
+        2: ("M", (0, 255, 0)),   # green
+        3: ("T", (255, 0, 0)),   # blue
+    }
+
+    # Label connected components across the whole skeleton (any part)
+    comp = label(part_mask > 0, connectivity=2)
+    n_comp = int(comp.max())
+    if n_comp == 0:
+        return out
+
+    H, W = out.shape[:2]
+
+    for lab_id in range(1, n_comp + 1):
+        obj_mask = (comp == lab_id)
+
+        for part_val, (abbr, color) in part_info.items():
+            pm = obj_mask & (part_mask == part_val)
+            if not np.any(pm):
+                continue
+
+            # length in px and µm
+            length_px = skeleton_length_px(pm)
+            length_um = length_px * um_per_px
+
+            # Place text near the part: use centroid of that part's pixels
+            ys, xs = np.where(pm)
+            cy = int(np.round(np.mean(ys)))
+            cx = int(np.round(np.mean(xs)))
+
+            # Offset a bit so the text doesn't sit exactly on the line
+            tx = int(np.clip(cx + 10, 0, W - 1))
+            ty = int(np.clip(cy - 10, 0, H - 1))
+
+            text = f"{abbr}:{length_um:.1f}µm"
+
+            # Optional readability: draw a thin dark outline behind text
+            cv2.putText(out, text, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX,
+                        font_scale, (0, 0, 0), thickness + 2, cv2.LINE_AA)
+            cv2.putText(out, text, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX,
+                        font_scale, color, thickness, cv2.LINE_AA)
+
+    return out
 
 
 if __name__ == '__main__':
-    # Custom arguments
+    # --------------------------- Custom arguments ---------------------------
     parser = argparse.ArgumentParser()
     parser.add_argument('--kernel_size', type=int, default=3, help='Kernel size for morphological operations')
     parser.add_argument('--iterations', type=int, default=2, help='Number of iterations for morphological operations')
     parser.add_argument('--object_size_threshold', type=int, default=2500, help='Threshold for small object removal')
     parser.add_argument('--mask_threshold', type=float, default=0.38, help='Threshold for mask creation')
     parser.add_argument('--save_results', type=bool, default=True, help='Save results')
-    # ADD to your argparse block (keep style consistent with your other bools)
-    parser.add_argument('--save_profiles', type=bool, default=True,
+
+    # Profile plot switch (use proper boolean flags)
+    parser.add_argument('--save_profiles', dest='save_profiles', action='store_true',
                         help='Save smoothed intensity profile plots with split markers')
-    # parser.add_argument('--cvat_parts', type=bool, default=True,
-                        help='Save CVAT XML with head/midpiece/tail polygons')
+    parser.add_argument('--no-save_profiles', dest='save_profiles', action='store_false',
+                        help='Do not save intensity profile plots')
+    parser.set_defaults(save_profiles=True)
+
+    # CVAT export switches (single XML for whole dataset)
+    parser.add_argument('--save_cvat', dest='save_cvat', action='store_true',
+                        help='Export polylines to a single CVAT XML for the whole dataset')
+    parser.add_argument('--no-save_cvat', dest='save_cvat', action='store_false',
+                        help='Do not export CVAT XML')
+    parser.set_defaults(save_cvat=True)
+
+    parser.add_argument('--cvat_parts', dest='cvat_parts', action='store_true',
+                        help='Use separate labels head/midpiece/tail')
+    parser.add_argument('--no-cvat_parts', dest='cvat_parts', action='store_false',
+                        help='Use a single label for all polylines')
+    parser.set_defaults(cvat_parts=True)
+
+    parser.add_argument('--cvat_label', type=str, default='sperm',
+                        help='Label name when not splitting into parts')
+    parser.add_argument('--cvat_xml_path', type=str, default='cvat_annotations.xml',
+                        help='Output path for the dataset-level CVAT XML')
 
     custom_args, unknown = parser.parse_known_args()
-    # print(f"[debug] save_profiles = {custom_args.save_profiles}")
+    # -----------------------------------------------------------------------
 
-    # Existing options
+    # ---------------------------- Existing options -------------------------
     opt = TestOptions().parse()
     opt.num_threads = 1
     opt.batch_size = 1
@@ -126,6 +285,7 @@ if __name__ == '__main__':
     opt.use_augment = False
     opt.display_id = -1
     patch_size = 256
+
     # Collect dataset-wide CVAT items here
     cvat_items = []
 
@@ -143,10 +303,11 @@ if __name__ == '__main__':
     grouped_preds = defaultdict(list)
     grouped_coords = defaultdict(list)
     grouped_shapes = {}
-
-
+    # -----------------------------------------------------------------------
 
     print("Running inference on patches...")
+    um_per_px = load_global_um_per_px("scale_calibration.json")
+    print(f"[Calibration] Using um_per_px={um_per_px:.8f} from scale_calibration.json")
 
     for i, data in enumerate(dataset):
         if i >= opt.num_test:
@@ -176,14 +337,8 @@ if __name__ == '__main__':
         img_shape = grouped_shapes[img_path]
 
         full_pred = stitch_predictions(pred_patches, coords, img_shape, patch_size)
-        # map logits -> probabilities in [0,1]
-        # full_pred = 1.0 / (1.0 + np.exp(-full_pred))
-
         full_pred = np.clip(full_pred, 0.0, 1.0)
         print("full_pred min/max:", float(full_pred.min()), float(full_pred.max()))
-
-
-        # print("full_pred min/max after remap:", full_pred.min(), full_pred.max())
 
         binary_mask = (full_pred > custom_args.mask_threshold).astype(np.uint8) * 255
         binary_mask = postprocess_predictions(
@@ -196,28 +351,27 @@ if __name__ == '__main__':
 
         original_img = cv2.imread(img_path)
         overlay_img = apply_mask_overlay(original_img, binary_mask)
-        
-        # --- NEW: split into head / mid / tail on the stitched mask ---
-        # Prepare grayscale for intensity sampling
-        gray_img = cv2.cvtColor(original_img, cv2.COLOR_BGR2GRAY)
 
-        # Make a 1-pixel skeleton from the binary mask
-        # skimage.skeletonize expects boolean; result is bool -> cast to uint8*255
+        # --- Split into head / mid / tail on the stitched mask ---
+        gray_img = cv2.cvtColor(original_img, cv2.COLOR_BGR2GRAY)
         skel_bool = skeletonize((binary_mask > 0).astype(bool))
         skeleton = (skel_bool.astype(np.uint8)) * 255
 
-        # WITH this block:
         if custom_args.save_profiles:
             part_mask, profiles = split_head_mid_tail(gray_img, skeleton, return_profiles=True)
         else:
             part_mask = split_head_mid_tail(gray_img, skeleton)
             profiles = None
 
-        # Pretty visualization of parts
         parts_color = colorize_parts(part_mask)
-
-        # Optional: overlay colored parts on original image
         parts_overlay = cv2.addWeighted(original_img, 1.0, parts_color, 0.7, 0)
+
+        parts_overlay_with_lengths = annotate_part_lengths_on_overlay(
+            parts_overlay_bgr=parts_overlay,
+            part_mask=part_mask,
+            um_per_px=um_per_px
+            )          
+
 
         # Save intensity profiles (if enabled)
         if custom_args.save_profiles and profiles is not None:
@@ -225,63 +379,56 @@ if __name__ == '__main__':
                 sm = p.get('smoothed', None)
                 head = p.get('head', -1)
                 tail = p.get('tail', -1)
-                # Save even if head/tail are -1; skip only if smoothed is empty
                 if sm is not None and len(sm) > 0:
                     out_plot = os.path.join(overlay_dir, f'{name}_profile_{k:02d}.png')
                     save_intensity_profile_plot(sm, head, tail, out_plot)
                     print(f"Saved intensity profile plot: {out_plot}")
-        # # --- NEW: build polylines and (optionally) export CVAT XML ---
-        # label_to_polys = {}
-        # if custom_args.cvat_parts:
-        #     # separate polylines for head/mid/tail using part_mask
-        #     for val, lbl in [(1, 'head'), (2, 'midpiece'), (3, 'tail')]:
-        #         pmask = (part_mask == val).astype(np.uint8) * 255
-        #         polys = skeleton_to_polylines(pmask, min_points=5)
-        #         if polys:
-        #             label_to_polys[lbl] = polys
-        # else:
-        #     # single label from whole skeleton
-        #     polys = skeleton_to_polylines(skeleton, min_points=5)
-        #     if polys:
-        #         label_to_polys[custom_args.cvat_label] = polys
 
-        # # Accumulate for dataset-level export
-        # if custom_args.save_cvat:
-        #     h, w = original_img.shape[:2]
-        #     cvat_items.append({
-        #         'name': os.path.basename(img_path),
-        #         'width': w,
-        #         'height': h,
-        #         'label_to_polys': label_to_polys
-        #     })
-        # # After all images are processed, write a single CVAT XML if requested
-        # if custom_args.save_cvat:
-        #     if len(cvat_items) == 0:
-        #         print("[CVAT] No items to export (no polylines found).")
-        #     else:
-        #         # If cvat_xml_path is relative, put it next to your overlays of the last run
-        #         out_xml = custom_args.cvat_xml_path
-        #         if not os.path.isabs(out_xml):
-        #             # default to the same directory where overlays are saved for this run
-        #             out_xml = os.path.join(overlay_dir if 'overlay_dir' in locals() else os.getcwd(),
-        #                                 custom_args.cvat_xml_path)
-        #         write_cvat_xml_dataset(cvat_items, out_xml)
-        #         print(f"[CVAT] Saved dataset annotations: {out_xml}")
+        # --- Build polylines (for CVAT) ---
+        label_to_polys = {}
+        if custom_args.cvat_parts:
+            for val, lbl in [(1, 'Head'), (2, 'Midpiece'), (3, 'Tail')]:
+                pmask = (part_mask == val).astype(np.uint8) * 255
+                polys = skeleton_to_polylines(pmask, min_points=5)
+                if polys:
+                    label_to_polys[lbl] = polys
+        else:
+            polys = skeleton_to_polylines(skeleton, min_points=5)
+            if polys:
+                label_to_polys[custom_args.cvat_label] = polys
 
+        print(f"[CVAT] {name}: labels={list(label_to_polys.keys())}, counts={[len(v) for v in label_to_polys.values()]}")
 
+        # Accumulate for dataset-level export
+        if custom_args.save_cvat:
+            h, w = original_img.shape[:2]
+            cvat_items.append({
+                'name': os.path.basename(img_path),
+                'width': w,
+                'height': h,
+                'label_to_polys': label_to_polys
+            })
 
-
-        # cv2.imwrite(os.path.join(output_dir, f'{name}_skeleton.png'), skeleton)
-        # cv2.imwrite(os.path.join(output_dir, f'{name}_parts_mask.png'), part_mask)
-        # cv2.imwrite(os.path.join(output_dir, f'{name}_parts_color.png'), parts_color)
+        # --- Save per-image outputs ---
         cv2.imwrite(os.path.join(overlay_dir, f'{name}_parts_overlay.png'), parts_overlay)
-
-        # Save outputs
         cv2.imwrite(os.path.join(output_dir, f'{name}.png'), original_img)
         cv2.imwrite(os.path.join(output_dir, f'{name}_label_viz.png'), binary_mask)
         cv2.imwrite(os.path.join(output_dir, f'{name}_fused.png'), grayscale_pred)
         cv2.imwrite(os.path.join(overlay_dir, f'{name}_overlay.png'), overlay_img)
+        cv2.imwrite(os.path.join(overlay_dir, f"{name}_parts_overlay_lengths.png"), parts_overlay_with_lengths)
+
 
         print(f"Saved: {name}_label_viz.png, {name}_fused.png, {name}_overlay.png")
+
+    # ----------------- Write one CVAT XML after the loop --------------------
+    if custom_args.save_cvat:
+        if len(cvat_items) == 0:
+            print("[CVAT] No items to export (no polylines found).")
+        else:
+            out_xml = custom_args.cvat_xml_path
+            if not os.path.isabs(out_xml):
+                out_xml = os.path.join(overlay_dir, custom_args.cvat_xml_path)
+            write_cvat_xml_dataset(cvat_items, out_xml)
+            print(f"[CVAT] Saved dataset annotations: {out_xml}")
 
     print("✅ All done.")

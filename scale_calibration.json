@@ -1,0 +1,19 @@
+{
+  "BS25-038_6.jpg": {
+    "image_path": "C:\\Users\\sonic\\OneDrive\\Documents\\DeepSegmentor_new\\datasets\\single_img\\test_img\\BS25-038_6.jpg",
+    "bar_um": 20.0,
+    "bar_pixels": 232.0,
+    "um_per_px": 0.08620689655172414,
+    "points_xy": [
+      [
+        3864,
+        2143
+      ],
+      [
+        4096,
+        2143
+      ]
+    ],
+    "created_at": "2026-01-15T13:18:14"
+  }
+}

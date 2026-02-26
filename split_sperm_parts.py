@@ -124,7 +124,7 @@ def _find_sperm_split_points(smoothed_signal):
         tail = length - 1 - tail
 
     if head <= 0 or tail <= 0:
-        return -1, -1, reverse
+        return -1, -1, reverse 
     return head, tail, reverse
 
 def split_head_mid_tail(original_gray, skeleton_mask, return_profiles: bool = False):
